@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat App</title>
+    <style>
+        #sidebar {
+            float: left;
+            width: 20%;
+            border-right: 1px solid #ccc;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+        #chatbox {
+            float: left;
+            width: 80%;
+            padding-left: 20px;
+            box-sizing: border-box;
+        }
+        #messages {
+            height: calc(100vh - 100px);
+            overflow-y: auto;
+            padding: 10px;
+            border: 1px solid #ccc;
+        }
+        #message-input {
+            width: calc(100% - 80px);
+            padding: 10px;
+            margin: 10px 0;
+            box-sizing: border-box;
+        }
+        #send-message {
+            padding: 10px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <button id="create-channel">Create Channel</button>
+        <button id="join-channel">Join Channel</button>
+        <div id="create-channel-form" style="display: none;">
+            <input type="text" id="new-channel-name" placeholder="Channel name">
+            <button id="submit-new-channel">Submit</button>
+        </div>
+        <div id="join-channel-form" style="display: none;">
+            <input type="text" id="join-channel-name" placeholder="Channel name">
+            <button id="submit-join-channel">Submit</button>
+        </div>
+        <div id="channel-list">
+            <h3>All Channels</h3>
+            <ul id="channels"></ul>
+        </div>
+    </div>
+    <div id="chatbox">
+        <h2 id="chat-title"></h2>
+        <div id="messages"></div>
+        <div id="message-container">
+            <input type="text" id="message-input" placeholder="Type a message...">
+            <button id="send-message">Send</button>
+        </div>
+    </div>
+    <script>
+        let currentChannel = null;
+        let socket = null;
+        let username = null;
+
+        document.addEventListener('DOMContentLoaded', function() {
+        fetchUsername();
+    });
+
+    function fetchUsername() {
+        fetch('/api/get-username')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    username = data.username;
+                } else {
+                    alert('Error fetching username');
+                }
+            });
+    }
+        
+        document.getElementById('create-channel').addEventListener('click', function() {
+            document.getElementById('create-channel-form').style.display = 'block';
+            document.getElementById('join-channel-form').style.display = 'none';
+        });
+        
+        document.getElementById('join-channel').addEventListener('click', function() {
+            document.getElementById('join-channel-form').style.display = 'block';
+            document.getElementById('create-channel-form').style.display = 'none';
+        });
+        
+        document.getElementById('submit-new-channel').addEventListener('click', function() {
+            const channelName = document.getElementById('new-channel-name').value;
+            fetch('/create-channel', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ name: channelName })
+            }).then(response => response.json())
+              .then(data => {
+                  if (data.success) {
+                      addChannelToList(channelName);
+                      document.getElementById('new-channel-name').value = '';
+                      document.getElementById('create-channel-form').style.display = 'none';
+                  } else {
+                      alert('Error creating channel');
+                  }
+              });
+        });
+        
+        document.getElementById('submit-join-channel').addEventListener('click', function() {
+            const channelName = document.getElementById('join-channel-name').value;
+            fetch(`/join-channel`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ name: channelName })
+            }).then(response => response.json())
+              .then(data => {
+                  if (data.success) {
+                      addChannelToList(channelName);
+                      document.getElementById('join-channel-name').value = '';
+                      document.getElementById('join-channel-form').style.display = 'none';
+                  } else {
+                      alert('Channel not found');
+                  }
+              });
+        });
+        
+        function addChannelToList(channelName) {
+            const li = document.createElement('li');
+            li.textContent = channelName;
+            li.addEventListener('click', function() {
+                setActiveChannel(channelName);
+            });
+            document.getElementById('channels').appendChild(li);
+        }
+        
+        function setActiveChannel(channelName) {
+            currentChannel = channelName;
+            document.getElementById('chat-title').textContent = channelName;
+            if (socket) {
+                socket.close();
+            }
+            socket = new WebSocket(`ws://localhost:8080/ws?channel=${channelName}&username=${username}`);
+            socket.onmessage = function(event) {
+                let messagesDiv = document.getElementById('messages');
+                let message = document.createElement('p');
+                let data = JSON.parse(event.data);
+                message.innerHTML = `<b>${data.user}:</b> ${data.content}`;
+                messagesDiv.appendChild(message);
+            };
+            fetchMessagesForChannel(channelName);
+        }
+        
+        function fetchMessagesForChannel(channelName) {
+            fetch(`/channels/${channelName}/messages`)
+                .then(response => response.json())
+                .then(data => {
+                    const messagesDiv = document.getElementById('messages');
+                    messagesDiv.innerHTML = '';
+                    data.messages.forEach(message => {
+                        const p = document.createElement('p');
+                        p.innerHTML = `<b>${message.user}:</b> ${message.content}`;
+                        messagesDiv.appendChild(p);
+                    });
+                });
+        }
+        
+        document.getElementById('send-message').addEventListener('click', function() {
+            const messageContent = document.getElementById('message-input').value;
+            if (currentChannel && messageContent) {
+                const message = JSON.stringify({ content: messageContent, user: username });
+                socket.send(message);
+                document.getElementById('message-input').value = '';
+            }
+        });
+        </script>
+        
+</body>
+</html>
